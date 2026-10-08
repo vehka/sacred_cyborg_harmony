@@ -141,7 +141,10 @@ function change_input_source()
 end
 
 function load_sample(path)
-  if path == nil or path == "" or path == "-" then return end
+  -- an unset file param holds "-" or the folder it browses from
+  if path == nil or path == "" or path == "-" or path:sub(-1) == "/" then
+    return
+  end
   if not util.file_exists(path) then
     print("sample not found: "..path)
     return
