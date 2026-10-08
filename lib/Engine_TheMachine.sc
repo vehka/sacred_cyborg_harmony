@@ -4,6 +4,7 @@ Engine_TheMachine : CroneEngine {
   var pitchFinderSynth, infoBus, voiceInBus, backgroundBus, quantizedVoice, harmonyVoices, pitchHandler, leadBus, choirBus, endOfChainSynth;
   var inL, inR, backL, backR, backPan;
   var fileBus, sourceGroup, sampleBuf, samplePlayer, micLevel = 1, fileLevel = 0;
+  var lowFreq = 82, highFreq = 1046;
   
 	*new { arg context, doneCallback;
     	  
@@ -77,32 +78,28 @@ Engine_TheMachine : CroneEngine {
 		  if (samplePlayer != nil, { samplePlayer.set(\gate, 0); samplePlayer = nil; });
 		});
 		
+		// Pitch.kr only reads its range when it starts, so swap the follower.
+		// Before the first follower exists, just remember the range for it.
 		this.addCommand("setInputRange", "ff", { |msg|
-		  var low = msg[1].asFloat;
-		  var high = msg[2].asFloat;
-		  Routine({
-  		  if (pitchFinderSynth != nil, {
-  		    "freeing pitch".postln;
-    		  pitchFinderSynth.free;
-  	  	  pitchFinderSynth = nil;
-    		});
-    		Server.sync;
-    		"starting pitch".postln;
-	  	  pitchFinderSynth = Synth(\follower, [
-	  	    infoBus: infoBus,  
-	  	    voiceInBus: voiceInBus, 
-	  	    backgroundBus: backgroundBus, 
-	  	    fileBus: fileBus,
-	  	    micLevel: micLevel,
-	  	    fileLevel: fileLevel,
-	  	    inL: inL, 
-	  	    inR: inR,
-	  	    backL: backL,
-	  	    backR: backR,
-	  	    backgroundPan: backPan,
-	  	    minFreq:low, 
-	  	    maxFreq:high], addAction: \addAfter, target: sourceGroup);
-	  	}).play;
+		  lowFreq = msg[1].asFloat;
+		  highFreq = msg[2].asFloat;
+		  if (pitchFinderSynth != nil, {
+		    pitchFinderSynth.free;
+		    pitchFinderSynth = Synth(\follower, [
+		      infoBus: infoBus,
+		      voiceInBus: voiceInBus,
+		      backgroundBus: backgroundBus,
+		      fileBus: fileBus,
+		      micLevel: micLevel,
+		      fileLevel: fileLevel,
+		      inL: inL,
+		      inR: inR,
+		      backL: backL,
+		      backR: backR,
+		      backgroundPan: backPan,
+		      minFreq: lowFreq,
+		      maxFreq: highFreq], addAction: \addAfter, target: sourceGroup);
+		  });
 		});
 		
 		this.addCommand("acceptQuantizedPitch", "ffffff", { |msg|
@@ -207,7 +204,7 @@ Engine_TheMachine : CroneEngine {
       
       Server.default.sync;
       // This runs the whole time.
-      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, fileBus: fileBus, micLevel: micLevel, fileLevel: fileLevel, inL: 0.5, inR: 0.5, backL: 0, backR: 0, backgroundPan: 0], addAction: \addAfter, target: sourceGroup);
+      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, fileBus: fileBus, micLevel: micLevel, fileLevel: fileLevel, inL: inL ? 0.5, inR: inR ? 0.5, backL: backL ? 0, backR: backR ? 0, backgroundPan: backPan ? 0, minFreq: lowFreq, maxFreq: highFreq], addAction: \addAfter, target: sourceGroup);
       quantizedVoice = Synth(\grainVoice, [out: leadBus, voiceIn: voiceInBus, infoBus: infoBus, targetHz: 180, timeDispersion: 0.01], addAction: \addAfter, target: pitchFinderSynth);
       endOfChainSynth = Synth(\endOfChain, addAction: \addToTail);
     }).play;

@@ -220,6 +220,8 @@ function init()
   highspec.default = 1046
   params:add_control("low", "in range low", lowspec)
   params:add_control("high", "in range high", highspec)
+  params:set_action("low", change_range)
+  params:set_action("high", change_range)
   
   params:add_separator("lead cyborg")
   local pull_spec = controlspec.UNIPOLAR:copy()
