@@ -129,6 +129,67 @@ function change_input_mix()
   end
 end
 
+-- sample playback in place of the mic
+
+local BEATS_PER_BAR = 4
+local sample_duration = nil -- seconds; nil until a file is loaded
+local sample_loop_clock = nil
+
+function change_input_source()
+  local input = params:get("input")
+  engine.setSource(input == 2 and 0 or 1, input == 1 and 0 or 1)
+end
+
+function load_sample(path)
+  if path == nil or path == "" or path == "-" then return end
+  if not util.file_exists(path) then
+    print("sample not found: "..path)
+    return
+  end
+  local ch, samples, rate = audio.file_info(path)
+  if ch == nil or ch < 1 or samples < 1 or rate < 1 then
+    print("can't read sample: "..path)
+    return
+  end
+  sample_duration = samples / rate
+  engine.sampleLoad(path, ch)
+end
+
+-- Loop length in beats: the sample length rounded up to whole bars.
+-- A little slack keeps a sample cut a hair long from taking an extra bar.
+function sample_loop_beats()
+  local bar_sec = BEATS_PER_BAR * clock.get_beat_sec()
+  local bars = math.max(1, math.ceil(sample_duration / bar_sec - 0.02))
+  return bars * BEATS_PER_BAR
+end
+
+function sample_stop()
+  if sample_loop_clock ~= nil then
+    clock.cancel(sample_loop_clock)
+    sample_loop_clock = nil
+  end
+  engine.sampleStop()
+end
+
+function sample_play()
+  if sample_duration == nil then return end
+  if params:get("sample mode") == 1 then
+    engine.samplePlay()
+  elseif sample_loop_clock == nil then
+    sample_loop_clock = clock.run(function()
+      local cycle = 0
+      while true do
+        -- recomputed every cycle, so it follows tempo changes
+        clock.sync(sample_loop_beats())
+        if cycle % params:get("sample every") == 0 then
+          engine.samplePlay()
+        end
+        cycle = cycle + 1
+      end
+    end)
+  end
+end
+
 function init()
   osc.event = osc_in
   screen_redraw_clock = clock.run(
@@ -207,6 +268,23 @@ function init()
   params:set_action("background amp", change_input_mix)
   params:add_control("background pan", "background pan", controlspec.BIPOLAR)
   params:set_action("background pan", change_input_mix)
+  params:add_option("input", "input", {"mic", "sample", "mic + sample"}, 1)
+  params:set_action("input", change_input_source)
+
+  params:add_separator("sample")
+  params:add_file("sample file", "file", _path.audio)
+  params:set_action("sample file", load_sample)
+  params:add_option("sample mode", "mode", {"one-shot", "loop"}, 1)
+  params:set_action("sample mode", function() sample_stop() end)
+  params:add_binary("sample play", "play", "trigger")
+  params:set_action("sample play", function() sample_play() end)
+  params:add_binary("sample stop", "stop", "trigger")
+  params:set_action("sample stop", function() sample_stop() end)
+  params:add_number("sample every", "loop: play every", 1, 16, 1,
+    function(param)
+      local n = param:get()
+      return n == 1 and "loop" or "1/"..n.." loops"
+    end)
 
   params:read()
   params:bang()

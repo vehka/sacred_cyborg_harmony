@@ -3,6 +3,7 @@ Engine_TheMachine : CroneEngine {
 
   var pitchFinderSynth, infoBus, voiceInBus, backgroundBus, quantizedVoice, harmonyVoices, pitchHandler, leadBus, choirBus, endOfChainSynth;
   var inL, inR, backL, backR, backPan;
+  var fileBus, sourceGroup, sampleBuf, samplePlayer, micLevel = 1, fileLevel = 0;
   
 	*new { arg context, doneCallback;
     	  
@@ -38,6 +39,44 @@ Engine_TheMachine : CroneEngine {
 		  });
 		});
 		
+		// Levels of the two sources feeding pitch tracking and the voices.
+		this.addCommand("setSource", "ff", { |msg|
+		  micLevel = msg[1].asFloat;
+		  fileLevel = msg[2].asFloat;
+		  if (pitchFinderSynth != nil, {
+		    pitchFinderSynth.set(\micLevel, micLevel, \fileLevel, fileLevel);
+		  });
+		});
+		
+		// Load a sound file to use in place of the mic. A mono file is read
+		// into both channels, so both input styles work with it.
+		this.addCommand("sampleLoad", "si", { |msg|
+		  var path = msg[1].asString;
+		  var channels = if (msg[2].asInteger > 1, { [0, 1] }, { [0, 0] });
+		  Buffer.readChannel(context.server, path, channels: channels, action: { |buf|
+		    var old = sampleBuf;
+		    if (samplePlayer != nil, { samplePlayer.set(\gate, 0); samplePlayer = nil; });
+		    sampleBuf = buf;
+		    // Let the old player fade out before its buffer goes away.
+		    if (old != nil, { SystemClock.sched(0.1, { old.free; nil }); });
+		  });
+		});
+		
+		// Play the sample once from the start, fading out any earlier play.
+		this.addCommand("samplePlay", "", { |msg|
+		  if (sampleBuf != nil, {
+		    var player;
+		    if (samplePlayer != nil, { samplePlayer.set(\gate, 0); });
+		    player = Synth(\samplePlayer, [out: fileBus, buf: sampleBuf], target: sourceGroup);
+		    player.onFree({ if (samplePlayer === player, { samplePlayer = nil; }); });
+		    samplePlayer = player;
+		  });
+		});
+		
+		this.addCommand("sampleStop", "", { |msg|
+		  if (samplePlayer != nil, { samplePlayer.set(\gate, 0); samplePlayer = nil; });
+		});
+		
 		this.addCommand("setInputRange", "ff", { |msg|
 		  var low = msg[1].asFloat;
 		  var high = msg[2].asFloat;
@@ -53,13 +92,16 @@ Engine_TheMachine : CroneEngine {
 	  	    infoBus: infoBus,  
 	  	    voiceInBus: voiceInBus, 
 	  	    backgroundBus: backgroundBus, 
+	  	    fileBus: fileBus,
+	  	    micLevel: micLevel,
+	  	    fileLevel: fileLevel,
 	  	    inL: inL, 
 	  	    inR: inR,
 	  	    backL: backL,
 	  	    backR: backR,
 	  	    backgroundPan: backPan,
 	  	    minFreq:low, 
-	  	    maxFreq:high]);
+	  	    maxFreq:high], addAction: \addAfter, target: sourceGroup);
 	  	}).play;
 		});
 		
@@ -116,6 +158,15 @@ Engine_TheMachine : CroneEngine {
       choirBus = Bus.audio(numChannels: 2);
       backgroundBus = Bus.audio(numChannels:2);
       voiceInBus = Bus.audio(numChannels: 1);
+      fileBus = Bus.audio(numChannels: 2);
+      // Sample players live here, ahead of the follower that reads them.
+      sourceGroup = Group.new(context.server);
+      
+      SynthDef(\samplePlayer, { |out, buf, gate=1|
+        var snd = PlayBuf.ar(2, buf, BufRateScale.kr(buf), doneAction: Done.freeSelf);
+        var env = EnvGen.kr(Env.asr(0.005, 1, 0.02), gate, doneAction: Done.freeSelf);
+        Out.ar(out, snd * env);
+      }).add;
       
       SynthDef(\endOfChain, { 
       
@@ -123,8 +174,8 @@ Engine_TheMachine : CroneEngine {
       
       }).add;
       
-      SynthDef(\follower, { |infoBus, voiceInBus, backgroundBus, inL, inR, backL, backR, backgroundPan, minFreq=82, maxFreq=1046|
-        var in = SoundIn.ar([0, 1]);
+      SynthDef(\follower, { |infoBus, voiceInBus, backgroundBus, fileBus, inL, inR, backL, backR, backgroundPan, minFreq=82, maxFreq=1046, micLevel=1, fileLevel=0|
+        var in = (SoundIn.ar([0, 1]) * micLevel.lag(0.05)) + (In.ar(fileBus, 2) * fileLevel.lag(0.05));
         var snd = Mix.ar([inL, inR]*in);
         var background = Mix.ar([backL, backR]*in);
         var reference = LocalIn.kr(1);
@@ -156,7 +207,7 @@ Engine_TheMachine : CroneEngine {
       
       Server.default.sync;
       // This runs the whole time.
-      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, inL: 0.5, inR: 0.5, backL: 0, backR: 0, backgroundPan: 0]);
+      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, fileBus: fileBus, micLevel: micLevel, fileLevel: fileLevel, inL: 0.5, inR: 0.5, backL: 0, backR: 0, backgroundPan: 0], addAction: \addAfter, target: sourceGroup);
       quantizedVoice = Synth(\grainVoice, [out: leadBus, voiceIn: voiceInBus, infoBus: infoBus, targetHz: 180, timeDispersion: 0.01], addAction: \addAfter, target: pitchFinderSynth);
       endOfChainSynth = Synth(\endOfChain, addAction: \addToTail);
     }).play;
@@ -175,5 +226,8 @@ Engine_TheMachine : CroneEngine {
     leadBus.free;
     backgroundBus.free;
     voiceInBus.free;
+    sourceGroup.free;
+    fileBus.free;
+    sampleBuf.free;
   }
 }
