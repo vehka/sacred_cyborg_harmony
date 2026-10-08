@@ -15,7 +15,7 @@ Engine_TheMachine : CroneEngine {
 
 	  harmonyVoices = Dictionary.new;
 	  
-	  pitchHandler == OSCdef.new(\pitchHandler, { |msg, time|
+	  pitchHandler = OSCdef.new(\pitchHandler, { |msg, time|
 			var pitch = msg[3].asFloat;
             var amp = msg[4].asFloat;
 			luaOscAddr.sendMsg("/measuredPitch", pitch, amp);
@@ -156,7 +156,7 @@ Engine_TheMachine : CroneEngine {
       
       Server.default.sync;
       // This runs the whole time.
-      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, inL: 0.5, inR: 0.5, backL: 0, backR: 0, backPan: 0]);
+      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, inL: 0.5, inR: 0.5, backL: 0, backR: 0, backgroundPan: 0]);
       quantizedVoice = Synth(\grainVoice, [out: leadBus, voiceIn: voiceInBus, infoBus: infoBus, targetHz: 180, timeDispersion: 0.01], addAction: \addAfter, target: pitchFinderSynth);
       endOfChainSynth = Synth(\endOfChain, addAction: \addToTail);
     }).play;
