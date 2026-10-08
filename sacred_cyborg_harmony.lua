@@ -114,6 +114,12 @@ function change_range()
   engine.setInputRange(params:get("low"), params:get("high"))
 end
 
+function change_lead()
+  engine.setLead(params:get("pull"), params:get("lead amp"),
+    params:get("lead formants"), params:get("lead acquisition"),
+    params:get("lead pan"))
+end
+
 function change_input_mix()
   if params:get("style") == 1 then -- mix to mono
     engine.setMix(0.5, 0.5, 0, 0, 0);
@@ -236,6 +242,9 @@ function init()
   params:add_control("lead formants", "formants", controlspec.new(0.5, 2, 'lin', 0, 1, ""))
   params:add_control("lead acquisition", "acquisition speed", controlspec.new(0.01, 0.5, 'exp', 0, 0.1, "s"))
   params:add_control("lead pan", "pan", controlspec.BIPOLAR)
+  for _, id in ipairs({"pull", "lead amp", "lead formants", "lead acquisition", "lead pan"}) do
+    params:set_action(id, change_lead)
+  end
   
   
   params:add_separator("cyborg choir")

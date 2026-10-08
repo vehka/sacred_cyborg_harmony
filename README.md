@@ -56,7 +56,7 @@ The keys and encoders are currently unused by this script. There's only the scri
 
 A sound file can stand in for the microphone. It goes through the same pitch detection, lead voice and choir as live input.
 
-* `file` - the sound file to load. A mono file feeds both input channels; a stereo file follows the `style` setting like the inputs do.
+* `file` - the sound file to load. A stereo file follows the `style` setting like the inputs do; a mono file is always the voice, and never the background.
 * `mode` - `one-shot` plays the sample once per `play`. `loop` relaunches it in time with the clock: the loop length is the sample length rounded up to whole bars of 4 beats, so a sample shorter than a bar starts on every bar, one shorter than two bars on every second bar, and so on. The sample is not time-stretched; any remainder of the loop is silent.
 * `play` - start the one-shot, or start the loop at the next loop boundary. Map it to MIDI to trigger it from a controller.
 * `stop` - stop playback and the loop.

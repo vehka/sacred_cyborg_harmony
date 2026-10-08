@@ -4,7 +4,8 @@ Engine_TheMachine : CroneEngine {
   var pitchFinderSynth, infoBus, voiceInBus, backgroundBus, quantizedVoice, harmonyVoices, pitchHandler, leadBus, choirBus, endOfChainSynth;
   var inL, inR, backL, backR, backPan;
   var fileBus, sourceGroup, sampleBuf, samplePlayer, micLevel = 1, fileLevel = 0;
-  var lowFreq = 82, highFreq = 1046;
+  var lowFreq = 82, highFreq = 1046, fileBackground = 1;
+  var leadPull = 1, leadAmp = 0.5, leadFormants = 1, leadAcquisition = 0.1, leadPan = 0;
   
 	*new { arg context, doneCallback;
     	  
@@ -58,6 +59,9 @@ Engine_TheMachine : CroneEngine {
 		    var old = sampleBuf;
 		    if (samplePlayer != nil, { samplePlayer.set(\gate, 0); samplePlayer = nil; });
 		    sampleBuf = buf;
+		    // A mono file is the voice only; it has no background channel.
+		    fileBackground = if (msg[2].asInteger > 1, { 1 }, { 0 });
+		    if (pitchFinderSynth != nil, { pitchFinderSynth.set(\fileBackground, fileBackground); });
 		    // Let the old player fade out before its buffer goes away.
 		    if (old != nil, { SystemClock.sched(0.1, { old.free; nil }); });
 		  });
@@ -92,6 +96,7 @@ Engine_TheMachine : CroneEngine {
 		      fileBus: fileBus,
 		      micLevel: micLevel,
 		      fileLevel: fileLevel,
+		      fileBackground: fileBackground,
 		      inL: inL,
 		      inR: inR,
 		      backL: backL,
@@ -99,6 +104,18 @@ Engine_TheMachine : CroneEngine {
 		      backgroundPan: backPan,
 		      minFreq: lowFreq,
 		      maxFreq: highFreq], addAction: \addAfter, target: sourceGroup);
+		  });
+		});
+		
+		// Lead voice settings, applied at once rather than on the next note.
+		this.addCommand("setLead", "fffff", { |msg|
+		  leadPull = msg[1].asFloat;
+		  leadAmp = msg[2].asFloat;
+		  leadFormants = msg[3].asFloat;
+		  leadAcquisition = msg[4].asFloat;
+		  leadPan = msg[5].asFloat;
+		  if (quantizedVoice != nil, {
+		    quantizedVoice.set(\pull, leadPull, \amp, leadAmp, \formantRatio, leadFormants, \acquisition, leadAcquisition, \pan, leadPan);
 		  });
 		});
 		
@@ -171,10 +188,12 @@ Engine_TheMachine : CroneEngine {
       
       }).add;
       
-      SynthDef(\follower, { |infoBus, voiceInBus, backgroundBus, fileBus, inL, inR, backL, backR, backgroundPan, minFreq=82, maxFreq=1046, micLevel=1, fileLevel=0|
-        var in = (SoundIn.ar([0, 1]) * micLevel.lag(0.05)) + (In.ar(fileBus, 2) * fileLevel.lag(0.05));
+      SynthDef(\follower, { |infoBus, voiceInBus, backgroundBus, fileBus, inL, inR, backL, backR, backgroundPan, minFreq=82, maxFreq=1046, micLevel=1, fileLevel=0, fileBackground=1|
+        var mic = SoundIn.ar([0, 1]) * micLevel.lag(0.05);
+        var file = In.ar(fileBus, 2) * fileLevel.lag(0.05);
+        var in = mic + file;
         var snd = Mix.ar([inL, inR]*in);
-        var background = Mix.ar([backL, backR]*in);
+        var background = Mix.ar([backL, backR]*(mic + (file * fileBackground)));
         var reference = LocalIn.kr(1);
         var info = Pitch.kr(snd, minFreq: minFreq, maxFreq: maxFreq);
         var midi = info[0].cpsmidi;
@@ -204,8 +223,8 @@ Engine_TheMachine : CroneEngine {
       
       Server.default.sync;
       // This runs the whole time.
-      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, fileBus: fileBus, micLevel: micLevel, fileLevel: fileLevel, inL: inL ? 0.5, inR: inR ? 0.5, backL: backL ? 0, backR: backR ? 0, backgroundPan: backPan ? 0, minFreq: lowFreq, maxFreq: highFreq], addAction: \addAfter, target: sourceGroup);
-      quantizedVoice = Synth(\grainVoice, [out: leadBus, voiceIn: voiceInBus, infoBus: infoBus, targetHz: 180, timeDispersion: 0.01], addAction: \addAfter, target: pitchFinderSynth);
+      pitchFinderSynth = Synth(\follower, [infoBus: infoBus, voiceInBus: voiceInBus, backgroundBus: backgroundBus, fileBus: fileBus, micLevel: micLevel, fileLevel: fileLevel, fileBackground: fileBackground, inL: inL ? 0.5, inR: inR ? 0.5, backL: backL ? 0, backR: backR ? 0, backgroundPan: backPan ? 0, minFreq: lowFreq, maxFreq: highFreq], addAction: \addAfter, target: sourceGroup);
+      quantizedVoice = Synth(\grainVoice, [out: leadBus, voiceIn: voiceInBus, infoBus: infoBus, targetHz: 180, timeDispersion: 0.01, pull: leadPull, amp: leadAmp, formantRatio: leadFormants, acquisition: leadAcquisition, pan: leadPan], addAction: \addAfter, target: pitchFinderSynth);
       endOfChainSynth = Synth(\endOfChain, addAction: \addToTail);
     }).play;
   }
